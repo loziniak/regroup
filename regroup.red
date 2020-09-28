@@ -6,20 +6,6 @@ Red [
 	License: BSD-3
 ]
 
-comment {
-	TODO:
-
-	-
-
-	CHANGELOG:
-
-	2020.03.26 v1.1
-	* all with 0 posts go down
-	* group with posts below treshold don't lose users
-
-	2020.03.25 v1.0
-}
-
 
 ;--
 ;-- CONFIG
