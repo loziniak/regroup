@@ -1,7 +1,6 @@
 Red [
 	Description: {Script to sort contacts in Friendica groups by frequency of posting}
 	Author: "loziniak@o2.pl"
-	Dependency: https://github.com/loziniak/red-scripts/blob/master/http.red
 	File: %regroup.red
 	License: BSD-3
 ]
@@ -14,7 +13,7 @@ Red [
 ; Group ids. Has to start with none, group ids from most to less ferquent posts
 ; example:
 ;   frequency-grades: [none 74 73 63 61 62 75]
-; "none" is a main feed
+; "none" means a main feed (with all contacts)
 ; group 74 will eventually contain most-frequent posters, while group 75 – least-frequent
 frequency-grades: [none your-group-ids-here]
 
@@ -30,7 +29,6 @@ friendica-password: "your-password-here"
 
 
 
-#include %http.red
 random/seed now/time
 
 digit: charset [#"0" - #"9"]
@@ -44,33 +42,27 @@ hex: charset [
 display-login-form: function [
 	/extern cookie
 ] [
-	req: make request compose [
-		url: (rejoin ["https://" friendica-host "/"])
-	]
+	url: to url! rejoin ["https://" friendica-host "/"]
+	set [status headers body] write/info url [GET]
 
-	req/execute
-
-	phpsessid: select req/response/headers "Set-Cookie"
-	probe cookie: phpsessid: copy/part  find phpsessid "PHPSESSID="  find phpsessid ";"
+	phpsessid: select headers 'Set-Cookie
+	probe cookie: copy/part  find phpsessid "PHPSESSID="  find phpsessid ";"
 ]
 
 
 login: function [
 	/extern cookie
 ] [
-	req: make request [
-		url: rejoin ["https://" friendica-host "/login"]
-		method: 'POST
-		data: rejoin [
-			"auth-params=login&username="
-			friendica-username
-			"&password="
-			friendica-password
-			"&openid_url=&submit=Login&remember=0&remember=1"]
-		urlencode-data: false
-	]
+	url: rejoin ["https://" friendica-host "/login"]
 
-	req/headers: make map! compose [
+	data: rejoin [
+		"auth-params=login&username="
+		friendica-username
+		"&password="
+		friendica-password
+		"&openid_url=&submit=Login&remember=0&remember=1"]
+
+	headers: compose [
 		Cookie: (rejoin ["cncookiesaccepted=1; " cookie])
 
 		Host: (friendica-host)
@@ -80,16 +72,14 @@ login: function [
 		Connection: "keep-alive"
 	]
 
-	req/execute
+	set [status headers body] write/info to url! url reduce ['POST headers data]
 
-	;probe req
-
-	friendica: select req/response/headers "Set-Cookie"
+	friendica: select headers 'Set-Cookie
 	probe friendica:  copy/part  find friendica "Friendica="  find friendica ";"		;@@ DRY
 	cookie: rejoin [cookie "; " friendica]
 
-	unless req/response/status = 302 [
-		probe req
+	unless status = 200 [
+		probe reduce [status headers copy/part body 1000]
 		halt
 	]
 ]
@@ -98,20 +88,14 @@ login: function [
 scrape-group-into: function [
 	users-blk [block!]
 	grp-name [integer! word!]
-	/extern
-		cookie [string!]
-		add-tokens [block!]
+	/extern cookie add-tokens
 ] [
 ;	probe users-blk
 ;	probe grp-name
 ;	probe type? grp-name
 
-	req: make request [
-		url: rejoin ["https://" friendica-host "/group/" grp-name]
-		method: 'GET
-	]
-
-	req/headers: make map! compose [
+	url: rejoin ["https://" friendica-host "/group/" grp-name]
+	headers: compose [
 		Cookie: (rejoin ["cncookiesaccepted=1; " cookie])
 
 		Host: (friendica-host)
@@ -120,9 +104,7 @@ scrape-group-into: function [
 		Connection: "keep-alive"
 	]
 
-	req/execute
-
-;	probe req/response
+	set [status headers body] write/info to url! url reduce ['GET headers]
 
 	user-rule: [
 		[
@@ -165,7 +147,7 @@ scrape-group-into: function [
 			)
 		]
 	]
-	probe parse req/response/body [
+	probe parse body [
 		thru "viewcontact_wrapper"
 		any user-rule
 		any skip
@@ -185,16 +167,10 @@ access: function [
 count-group: function [
 	users-blk [block!]
 	grp-name [word! integer!]
-	/extern
-		cookie [string!]
-		not-found [block!]
+	/extern cookie not-found
 ] [
-	req: make request [
-		url: rejoin ["https://" friendica-host "/network/" grp-name]
-		method: 'GET
-	]
-
-	req/headers: make map! compose [
+	url: rejoin ["https://" friendica-host "/network/" grp-name]
+	headers: compose [
 		Cookie: (rejoin ["cncookiesaccepted=1; " cookie])
 
 		Host: (friendica-host)
@@ -203,9 +179,7 @@ count-group: function [
 		Connection: "keep-alive"
 	]
 
-	req/execute
-
-;	probe req/response
+	set [status headers body] write/info to url! url reduce ['GET headers]
 
 	tread-wrappers: 0
 	media-headings: 0
@@ -233,7 +207,7 @@ count-group: function [
 		)
 	]
 
-	probe parse req/response/body [
+	probe parse body [
 		thru "network-content-wrapper"
 		any post-rule
 		any skip
@@ -306,15 +280,12 @@ add-contact-to: function [
 	]
 	print ["::: add" copy/part found 4]
 
-	req: make request [
-		url: rejoin [
-			"https://" friendica-host "/group/" grp
-			"/" found/2
-			"?t=" found/3]
-		method: 'GET
-	]
+	url: rejoin [
+		"https://" friendica-host "/group/" grp
+		"/" found/2
+		"?t=" found/3]
 
-	req/headers: make map! compose [
+	headers: compose [
 		Cookie: (rejoin ["cncookiesaccepted=1; " cookie])
 
 		Host: (friendica-host)
@@ -323,32 +294,25 @@ add-contact-to: function [
 		Connection: "keep-alive"
 	]
 
-	req/execute
+	set [status headers body] write/info to url! url reduce ['GET headers]
 
-;	req/response/body: ""
-;	probe req/response
-	print [req/response/status req/response/status-message]
+	print [status]
 ]
 
 
 remove-contact-from: function [
 	grp [integer!]
 	record [block!]
-	/extern
-		cookie
-		add-tokens
+	/extern cookie add-tokens
 ] [
 	print ["::: remove" grp record/3]
 
-	req: make request [
-		url: rejoin [
-			"https://" friendica-host "/group/" grp
-			"/" record/2
-			"?t=" record/5]
-		method: 'GET
-	]
+	url: rejoin [
+		"https://" friendica-host "/group/" grp
+		"/" record/2
+		"?t=" record/5]
 
-	req/headers: make map! compose [
+	headers: compose [
 		Cookie: (rejoin ["cncookiesaccepted=1; " cookie])
 
 		Host: (friendica-host)
@@ -357,11 +321,9 @@ remove-contact-from: function [
 		Connection: "keep-alive"
 	]
 
-	req/execute
+	set [status headers body] write/info to url! url reduce ['GET headers]
 
-;	req/response/body: ""
-;	probe req/response
-	print [req/response/status req/response/status-message]
+	print [status]
 ]
 
 
