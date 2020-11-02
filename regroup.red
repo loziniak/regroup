@@ -26,6 +26,9 @@ display-login-form: function [
 	set [status headers body] write/info url [GET]
 
 	phpsessid: select headers 'Set-Cookie
+	if block? phpsessid [
+		phpsessid: first phpsessid
+	]
 	probe cookie: copy/part  find phpsessid "PHPSESSID="  find phpsessid ";"
 ]
 
